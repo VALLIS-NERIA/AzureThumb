@@ -25,7 +25,7 @@ namespace ImageResize {
             [BlobTrigger("ero/{name}", Connection = "")]
             CloudBlockBlob input,
             [Blob("thumbnails/{name}.thumb.jpg", FileAccess.Write)]
-            Stream output,
+            CloudBlockBlob output,
             string name,
             TraceWriter log) {
             if (IsVideo(name)) {

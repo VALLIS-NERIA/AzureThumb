@@ -8,6 +8,7 @@ namespace ImageResize {
     using System;
     using System.Drawing.Imaging;
     using System.Text.RegularExpressions;
+    using Microsoft.WindowsAzure.Storage.Blob;
 
     public static class ImageThumbFunc {
         private static bool IsImage(string filename) {
@@ -24,7 +25,7 @@ namespace ImageResize {
             [BlobTrigger("ero/{name}", Connection = "")]
             Stream input,
             [Blob("thumbnails/{name}", FileAccess.Write)]
-            Stream output,
+            CloudBlockBlob output,
             string name,
             TraceWriter log) {
 
@@ -32,9 +33,10 @@ namespace ImageResize {
                 var settings = new ResizeSettings
                 {
                     MaxWidth = 400,
-                    Format = "png"
+                    Format = "jpg"
                 };
                 ImageBuilder.Current.Build(input, output, settings);
+                output.Properties.ContentType = "image/jpeg";
             }
 
 
