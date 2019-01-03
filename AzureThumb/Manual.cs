@@ -30,10 +30,8 @@ namespace AzureThumb
         }
 
         //[FunctionName("Manual")]
-        public static void Run([TimerTrigger("5 * * * *")]TimerInfo myTimer, TraceWriter log)
-        {
-            CloudStorageAccount storageAccount = CloudStorageAccount.Parse(
-                "DefaultEndpointsProtocol=https;AccountName=backupstroage;AccountKey=gH3avMwxeBmvtfN3W379tpPyeECwH3EfuDQVQNUFWY2iBH6n8JwbEfyc+i/L7gLAwn4yek7EbKZwCIDykVYpkg==;BlobEndpoint=https://backupstroage.blob.core.windows.net/;TableEndpoint=https://backupstroage.table.core.windows.net/;QueueEndpoint=https://backupstroage.queue.core.windows.net/;FileEndpoint=https://backupstroage.file.core.windows.net/");
+        public static void Run([TimerTrigger("5 * * * *")]TimerInfo myTimer, TraceWriter log) {
+            CloudStorageAccount storageAccount = CloudStorageAccount.Parse("");
             // Create the blob client.
             CloudBlobClient blobClient = storageAccount.CreateCloudBlobClient();
 
