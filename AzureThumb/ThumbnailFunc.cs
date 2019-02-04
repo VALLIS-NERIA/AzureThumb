@@ -2,7 +2,6 @@ using System.IO;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Host;
 using ImageResizer;
-using NReco.VideoConverter;
 
 namespace AzureThumb {
     using System;
@@ -11,8 +10,8 @@ namespace AzureThumb {
     using System.Linq.Expressions;
     using System.Text.RegularExpressions;
     using Microsoft.WindowsAzure.Storage.Blob;
-    using NReco.VideoInfo;
     using static Thumbnailer;
+
     public static class ThumbnailFunc {
         [FunctionName(nameof(ThumbnailFunc))]
         public static void Run(
@@ -33,7 +32,7 @@ namespace AzureThumb {
                     log.Info($"Skipping {name}");
                 }
             }
-            catch(Exception e) {
+            catch (Exception e) {
                 log.Error($"error while processing {name}", e);
             }
         }

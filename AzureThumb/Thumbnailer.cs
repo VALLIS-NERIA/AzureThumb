@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace AzureThumb
-{
+namespace AzureThumb {
     using System.Drawing;
     using System.Drawing.Imaging;
     using System.IO;
@@ -13,10 +13,14 @@ namespace AzureThumb
     using ImageResizer;
     using Microsoft.Azure.WebJobs.Host;
     using Microsoft.WindowsAzure.Storage.Blob;
-    using NReco.VideoConverter;
-    using NReco.VideoInfo;
+    using GleamTech.VideoUltimate;
 
     public static class Thumbnailer {
+        private static float[] points = {0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f, 0.9f};
+        private static int sizeCap = 400;
+        private static int row = 3, col = 3;
+        private static int yOffset = 100;
+
         internal static bool IsImage(string filename) {
             var extension = Path.GetExtension(filename)?.Replace(".", "");
             if (extension == null) {
@@ -25,11 +29,6 @@ namespace AzureThumb
 
             return Regex.IsMatch(extension, "gif|png|jpe?g", RegexOptions.IgnoreCase);
         }
-
-        private static float[] points = { 0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f, 0.9f };
-        private static int sizeCap = 400;
-        private static int row = 3, col = 3;
-        private static int yOffset = 100;
 
         internal static bool IsVideo(string filename) {
             var extension = Path.GetExtension(filename)?.Replace(".", "");
@@ -40,30 +39,19 @@ namespace AzureThumb
             return Regex.IsMatch(extension, "avi|mov|mp4|m4v|mpg|flv", RegexOptions.IgnoreCase);
         }
 
-        internal static Size GetSize(MediaInfo info) {
-            int vidWidth = -1, vidHeight = -1;
-            bool ok = false;
-            foreach (var s in info.Streams) {
-                if (s.CodecType == "video") {
-                    vidWidth = s.Width;
-                    vidHeight = s.Height;
-                    ok = true;
-                    break;
-                }
-            }
+        private static Size GetSize(VideoFrameReader reader) {
+            int vidWidth = reader.Width;
+            int vidHeight = reader.Height;
 
-            var videoSize = new Size(vidWidth, vidHeight);
-
-            if (!ok) throw new InvalidDataException("There is no video stream");
             int longer = vidWidth > vidHeight ? vidWidth : vidHeight;
 
             if (longer > sizeCap) {
-                int picWidth = (int)((float)vidWidth * sizeCap / longer);
-                int picHeight = (int)((float)vidHeight * sizeCap / longer);
+                int picWidth = (int) ((float) vidWidth * sizeCap / longer);
+                int picHeight = (int) ((float) vidHeight * sizeCap / longer);
                 return new Size(picWidth, picHeight);
             }
 
-            return videoSize;
+            return new Size(vidWidth, vidHeight);
         }
 
 
@@ -97,53 +85,59 @@ namespace AzureThumb
             string name,
             TraceWriter log) {
             var begin = DateTime.Now;
+            var inputStream = input.OpenRead();
 
-            var path = input.Uri.AbsoluteUri;
-            var shortPath = input.Uri.AbsolutePath;
-            
-            var ffmpeg = new FFMpegConverter();
-            var probe = new FFProbe();
-            probe.ToolPath = @"D:\home\site\wwwroot\bin";
-            ffmpeg.FFMpegToolPath = @"D:\home\site\wwwroot\bin";
 
-            var info = probe.GetMediaInfo(path);
-            var newSize = GetSize(info);
+            var reader = new VideoFrameReader(inputStream);
+            var newSize = GetSize(reader);
 
-            var font = new Font(FontFamily.GenericSansSerif, 20, FontStyle.Bold);
+            var font = new Font(new FontFamily("Microsoft YaHei UI"), 20, FontStyle.Bold);
 
             var outputImg = new Bitmap(col * newSize.Width, row * newSize.Height + yOffset);
             var og = Graphics.FromImage(outputImg);
             og.Clear(Color.White);
-            var length = info.Duration.TotalSeconds;
+            var length = reader.Duration.TotalSeconds;
             for (int i = 0; i < col; i++) {
                 for (int j = 0; j < row; j++) {
-                    var idx = i * col + j;
+                    var idx = j * col + i;
                     var point = points[idx];
-                    var second = (int)(length * point);
-                    using (var buffjpg = new MemoryStream()) {
-                        var x = i * (newSize.Width + 2);
-                        var y = j * (newSize.Height + 2) + yOffset;
-                        ffmpeg.GetVideoThumbnail(path, buffjpg, second);
-                        var curImg = Image.FromStream(buffjpg);
-                        og.DrawString(TimeSpan.FromSeconds(second).ToString(@"hh\:mm\:ss"), font, Brushes.Cyan, x, y);
+                    var time = (int) Math.Ceiling(length * point);
+                    var x = i * (newSize.Width + 2);
+                    var y = j * (newSize.Height + 2) + yOffset;
+                    reader.Seek(time);
+                    if (!reader.Read()) {
+                        continue;
+                    }
+
+                    using (var curImg = reader.GetFrame()) {
                         og.DrawImage(curImg, x, y, newSize.Width, newSize.Height);
-                        curImg.Dispose();
+                        var p = new GraphicsPath();
+                        var timeString = $"{time / 60:D2}:{time % 60:D2}";
+                        p.AddString(timeString, font.FontFamily, (int) font.Style, font.Size * 2, new Point(x, y), StringFormat.GenericDefault);
+                        og.FillPath(Brushes.White, p);
+                        og.DrawPath(new Pen(Color.Black, 2f), p);
                     }
                 }
             }
 
-            og.DrawString($"{shortPath}\n{(int)info.Duration.TotalMinutes:D2}:{info.Duration.Seconds}", font, Brushes.Black, new RectangleF(0, 0, col * newSize.Width, yOffset));
-            var stream = output.OpenWrite();
-            outputImg.Save(stream, ImageFormat.Jpeg);
-            stream.Flush();
-            stream.Close();
+            og.DrawString(
+                $"{name}\n" +
+                $"{(int) reader.Duration.TotalMinutes:D2}:{reader.Duration.Seconds} - {reader.BitRate}kbps, {reader.CodecDescription}\n",
+                font,
+                Brushes.Black,
+                new RectangleF(0, 0, col * newSize.Width, yOffset));
+
+            var outputStream = output.OpenWrite();
+            outputImg.Save(outputStream, ImageFormat.Jpeg);
             outputImg.Dispose();
+            outputStream.Flush();
+            outputStream.Close();
+            outputStream.Dispose();
             og.Dispose();
             output.Properties.ContentType = "image/jpeg";
             output.SetProperties();
-            var time = DateTime.Now - begin;
 
-            log.Info($"Success in {time.TotalMilliseconds:F2}ms: {name}", "VideoThumbnail");
+            log.Info($"Success in {(DateTime.Now - begin).TotalMilliseconds:F2}ms: {name}", "VideoThumbnail");
         }
     }
 }
