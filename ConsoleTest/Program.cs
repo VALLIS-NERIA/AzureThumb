@@ -1,5 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Drawing.Drawing2D;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace ConsoleTest {
     using System;
@@ -45,7 +47,22 @@ namespace ConsoleTest {
             return new Size(vidWidth, vidHeight);
         }
 
-        public static void Main() {
+        static Task T1() {
+            return Task.Run(
+                () => {
+                    Thread.Sleep(1000);
+                    Console.WriteLine("222222");
+                });
+        }
+
+        static async Task Main() {
+            var t = T1();
+            Console.WriteLine("11111");
+            await t;
+            Console.ReadKey();
+        }
+
+        public static void _Main() {
             var path = "test.mp4";
             var shortPath = "short";
             Stream s = new FileStream("test.mp4", FileMode.Open);
@@ -62,7 +79,7 @@ namespace ConsoleTest {
                 for (int j = 0; j < row; j++) {
                     var idx = j * col + i;
                     var point = points[idx];
-                    var time = (int)Math.Ceiling(length * point);
+                    var time = (int) Math.Ceiling(length * point);
                     var x = i * (newSize.Width + 2);
                     var y = j * (newSize.Height + 2) + yOffset;
                     reader.Seek(time);

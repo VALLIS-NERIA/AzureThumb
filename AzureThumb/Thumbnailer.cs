@@ -17,7 +17,8 @@ namespace AzureThumb {
 
     public static class Thumbnailer {
         private static float[] points = {0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f, 0.9f};
-        private static int sizeCap = 400;
+        private static int vidSizeCap = 400;
+        private static int imgSizeCap = 250;
         private static int row = 3, col = 3;
         private static int yOffset = 100;
 
@@ -39,41 +40,85 @@ namespace AzureThumb {
             return Regex.IsMatch(extension, "avi|mov|mp4|m4v|mpg|flv", RegexOptions.IgnoreCase);
         }
 
-        private static Size GetSize(VideoFrameReader reader) {
-            int vidWidth = reader.Width;
-            int vidHeight = reader.Height;
-
-            int longer = vidWidth > vidHeight ? vidWidth : vidHeight;
+        private static Size GetSize(int width, int height, int sizeCap) {
+            int longer = width > height ? width : height;
 
             if (longer > sizeCap) {
-                int picWidth = (int) ((float) vidWidth * sizeCap / longer);
-                int picHeight = (int) ((float) vidHeight * sizeCap / longer);
+                int picWidth = (int) ((float) width * sizeCap / longer);
+                int picHeight = (int) ((float) height * sizeCap / longer);
                 return new Size(picWidth, picHeight);
             }
 
-            return new Size(vidWidth, vidHeight);
+            return new Size(width, height);
         }
 
+        private static bool SyncMetadata(IDictionary<string, string> meta, IDictionary<string, string> newMeta) {
+            bool isDirty = false;
+            foreach (var pair in newMeta) {
+                if (!meta.ContainsKey(pair.Key)||meta[pair.Key]!=pair.Value) {
+                    meta[pair.Key] = pair.Value;
+                    isDirty = true;
+                }
+            }
 
-        internal static void ResizeImage(
+            return isDirty;
+        }
+
+        private static Task SetMetadata(CloudBlockBlob input,
+                                              CloudBlockBlob output,
+                                              int inputWidth,
+                                              int inputHeight,
+                                              int outputWidth,
+                                              int outputHeight) {
+            var meta1 = input.Metadata;
+            var inputDirty = SyncMetadata(meta1, new Dictionary<string, string>
+            {
+                {"width", inputWidth.ToString()},
+                {"height", inputHeight.ToString()},
+                {"thumbWidth", outputWidth.ToString()},
+                {"thumbHeight", outputHeight.ToString()},
+                {"thumbPath", output.Container.Name + "/" + output.Name}
+            });
+            Task t1 = inputDirty ? input.SetMetadataAsync() : Task.Run(() => { });
+
+            var meta2 = output.Metadata;
+            meta2["width"] = outputWidth.ToString();
+            meta2["height"] = outputHeight.ToString();
+
+            meta2["originWidth"] = inputWidth.ToString();
+            meta2["originHeight"] = inputHeight.ToString();
+            meta2["originPath"] = input.Container.Name + "/" + input.Name;
+            Task t2 = output.SetMetadataAsync();
+            
+            return Task.WhenAll(t1, t2);
+        }
+
+        internal static async void ResizeImage(
             CloudBlockBlob input,
             CloudBlockBlob output,
             string name,
             TraceWriter log) {
             var begin = DateTime.Now;
+
+            Stream stream = output.OpenWrite();
+            var img = Image.FromStream(input.OpenRead());
+            var thumbSize = GetSize(img.Width, img.Height, imgSizeCap);
+
             var settings = new ResizeSettings
             {
-                MaxWidth = 400,
+                Width = thumbSize.Width,
+                Height = thumbSize.Height,
+                Quality = 40,
                 Format = "jpg"
             };
 
-            Stream stream = output.OpenWrite();
 
-            ImageBuilder.Current.Build(input.OpenRead(), stream, settings, false);
+            ImageBuilder.Current.Build(img, stream, settings, false);
             stream.Flush();
             stream.Close();
             output.Properties.ContentType = "image/jpeg";
             output.SetProperties();
+            await SetMetadata(input, output, img.Width, img.Height, thumbSize.Width, thumbSize.Height);
             var time = DateTime.Now - begin;
 
             log.Info($"Success in {time.TotalMilliseconds:F2}ms: {name}", "ImageThumbnail");
@@ -89,7 +134,7 @@ namespace AzureThumb {
 
 
             var reader = new VideoFrameReader(inputStream);
-            var newSize = GetSize(reader);
+            var newSize = GetSize(reader.Width, reader.Height, vidSizeCap);
 
             var font = new Font(new FontFamily("Microsoft YaHei UI"), 20, FontStyle.Bold);
 
