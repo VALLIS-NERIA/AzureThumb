@@ -13,7 +13,7 @@ namespace ConsoleTest {
 
     public static class VideoThumbFunc {
         private static float[] points = {0.002f, 0.2f, 0.4f, 0.6f, 0.8f, 1.00f};
-        private static int sizeCap = 400;
+        private static int sizeCap = 300;
         private static int row = 2, col = 3;
         private static int yOffset = 100;
 
@@ -55,21 +55,21 @@ namespace ConsoleTest {
                 });
         }
 
-        static async Task Main() {
+        static async Task Main_() {
             var t = T1();
             Console.WriteLine("11111");
             await t;
             Console.ReadKey();
         }
 
-        public static void _Main() {
+        public static void Main() {
             var path = "test.mp4";
             var shortPath = "short";
             Stream s = new FileStream("test.mp4", FileMode.Open);
             var reader = new VideoFrameReader(s);
             var newSize = GetSize(reader);
 
-            var font = new Font(new FontFamily("Microsoft YaHei UI"), 20, FontStyle.Bold);
+            var font = new Font(new FontFamily("Microsoft YaHei UI"), 12, FontStyle.Bold);
 
             var outputImg = new Bitmap(col * newSize.Width, row * newSize.Height + yOffset);
             var og = Graphics.FromImage(outputImg);

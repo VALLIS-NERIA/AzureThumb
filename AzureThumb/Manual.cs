@@ -7,11 +7,10 @@ namespace AzureThumb
     using System.IO;
     using Microsoft.WindowsAzure.Storage;
     using Microsoft.WindowsAzure.Storage.Blob;
-    using static Thumbnailer;
 
     public static class Manual
     {
-        public static void Do(
+        /*public static void Do(
             [Blob("ero/{name}", Connection = "AzureWebJobsStorage")]
             CloudBlockBlob input,
             [Blob("thumbnails/{name}", FileAccess.ReadWrite)]
@@ -19,7 +18,7 @@ namespace AzureThumb
             string name,
             TraceWriter log) {
             if (IsImage(name)) {
-                ResizeImage(input, output, name, log);
+                ImageThumb(input, output, name, log);
             }
             else if (IsVideo(name)) {
                 ThumbVideo(input, output, name, log);
@@ -27,7 +26,7 @@ namespace AzureThumb
             else {
                 log.Info($"Skipping {name}");
             }
-        }
+        }*/
 
         //[FunctionName("Manual")]
         public static void Run([TimerTrigger("5 * * * *")]TimerInfo myTimer, TraceWriter log) {
