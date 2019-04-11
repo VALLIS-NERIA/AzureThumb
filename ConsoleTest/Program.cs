@@ -2,6 +2,10 @@
 using System.Drawing.Drawing2D;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.WindowsAzure.Storage;
+using Microsoft.WindowsAzure.Storage.Auth;
+using Microsoft.WindowsAzure.Storage.Blob;
+using Newtonsoft.Json;
 
 namespace ConsoleTest {
     using System;
@@ -55,14 +59,13 @@ namespace ConsoleTest {
                 });
         }
 
-        static async Task Main_() {
-            var t = T1();
-            Console.WriteLine("11111");
-            await t;
-            Console.ReadKey();
+        static void  Main() {
+            var secret = JsonConvert.DeserializeAnonymousType(File.ReadAllText("..\\..\\secret.json"), new {baseUri = "", storageName = "", storageKey = ""});
+            CloudBlockBlob a = new CloudBlockBlob(new Uri(secret.baseUri + @"ero/test/kick.jpg"), new StorageCredentials(secret.storageName, secret.storageKey));
+            ;
         }
 
-        public static void Main() {
+        public static void Main_() {
             var path = "test.mp4";
             var shortPath = "short";
             Stream s = new FileStream("test.mp4", FileMode.Open);
