@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -94,13 +95,21 @@ namespace AzureThumb {
             }
         }
 
-
         private static string[] availableSizes = {"sm", "md", "lg"};
         private static string defaultSize = "md";
-        private static string storageBaseUrl = System.Environment.GetEnvironmentVariable("StorageBaseUrl", EnvironmentVariableTarget.Process);
-        private static string storageName = System.Environment.GetEnvironmentVariable("StorageName", EnvironmentVariableTarget.Process);
-        private static string storageKey = System.Environment.GetEnvironmentVariable("StorageKey", EnvironmentVariableTarget.Process);
+        private static string storageBaseUrl;
+        private static string storageName;
+        private static string storageKey;
 
+        static ThumbnailFunc() {
+            var dict = Environment.GetEnvironmentVariable("AzureWebJobsStorage", EnvironmentVariableTarget.Process)
+                              .Split(';')
+                              .Select(s => Regex.Match(s, "(.+?)=(.+)").Groups)
+                              .ToDictionary(g => g[1].ToString(), g => g[2].ToString());
+            storageBaseUrl = $"{dict["DefaultEndpointsProtocol"]}://{dict["AccountName"]}.blob.{dict["EndpointSuffix"]}";
+            storageName = dict["AccountName"];
+            storageKey = dict["AccountKey"];
+        }
 
         [FunctionName("RestThumb")]
         public static async Task<HttpResponseMessage> RunRest(
