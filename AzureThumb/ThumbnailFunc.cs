@@ -112,15 +112,15 @@ namespace AzureThumb {
         }
 
         [FunctionName("RestThumb")]
-        public static async Task<HttpResponseMessage> RunRest(
+        public static HttpResponseMessage RunRest(
             [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = "thumb")]
             HttpRequestMessage req, TraceWriter log) {
             string name = req.GetQueryNameValuePairs()
-                             .FirstOrDefault(q => string.Compare(q.Key, "name", true) == 0)
+                             .FirstOrDefault(q => string.Compare(q.Key, "name", StringComparison.OrdinalIgnoreCase) == 0)
                              .Value;
 
             string size = req.GetQueryNameValuePairs()
-                             .FirstOrDefault(q => string.Compare(q.Key, "size", true) == 0)
+                             .FirstOrDefault(q => string.Compare(q.Key, "size", StringComparison.OrdinalIgnoreCase) == 0)
                              .Value;
 
             if (string.IsNullOrEmpty(name)) {
@@ -143,11 +143,11 @@ namespace AzureThumb {
 
 
             var input = new CloudBlockBlob(
-                new Uri($"{storageBaseUrl}/ero/" + name),
+                new Uri($"{storageBaseUrl}/ero/{name}"),
                 new StorageCredentials(storageName, storageKey));
 
             if (!input.Exists()) {
-                return new HttpResponseMessage(HttpStatusCode.NotFound);
+                return new HttpResponseMessage(HttpStatusCode.NotFound) {Content = new StringContent($"doesn't exist:\n{storageBaseUrl}/ero/{name}")};
             }
 
             var searchingThumb = new CloudBlockBlob(
