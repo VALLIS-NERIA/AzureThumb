@@ -13,6 +13,7 @@ using ImageResizer;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Auth;
+using Microsoft.WindowsAzure.Storage.Queue;
 
 namespace AzureThumb {
     using System;
@@ -22,99 +23,39 @@ namespace AzureThumb {
     using System.Text.RegularExpressions;
     using Microsoft.WindowsAzure.Storage.Blob;
 
-    public static class ThumbnailFunc {
-        internal static bool IsImage(string filename) {
-            var extension = Path.GetExtension(filename)?.Replace(".", "");
-            if (extension == null) {
-                return false;
-            }
-
-            return Regex.IsMatch(extension, "gif|png|jpe?g", RegexOptions.IgnoreCase);
-        }
-
-        internal static bool IsVideo(string filename) {
-            var extension = Path.GetExtension(filename)?.Replace(".", "");
-            if (extension == null) {
-                return false;
-            }
-
-            return Regex.IsMatch(extension, "avi|mov|mp4|m4v|mpg|flv", RegexOptions.IgnoreCase);
-        }
-
-#if DEBUG
-        [Disable]
-#endif
-        [FunctionName("ImageThumbnail")]
-        public static void RunImage(
-            [BlobTrigger("ero/{name}", Connection = "AzureWebJobsStorage")]
-            CloudBlockBlob input,
-            [Blob("thumb-sm/{name}.thumb.jpg", FileAccess.ReadWrite)]
-            CloudBlockBlob output_sm,
-            [Blob("thumb-md/{name}.thumb.jpg", FileAccess.ReadWrite)]
-            CloudBlockBlob output_md,
-            [Blob("thumb-lg/{name}.thumb.jpg", FileAccess.ReadWrite)]
-            CloudBlockBlob output_lg,
-            string name,
-            TraceWriter log) {
-            try {
-                if (IsImage(name)) {
-                    ImageThumbnailer.ImageThumb(input, output_sm, output_md, output_lg, name, log);
-                }
-            }
-            catch (Exception e) {
-                log.Error($"error while processing {name}", e);
-                throw;
-            }
-        }
-
-#if DEBUG
-        [Disable]
-#else
-        [Disable("Disable_Video")]
-#endif
-        [FunctionName("VideoThumbnail")]
-        public static void RunVideo(
-            [BlobTrigger("ero/{name}", Connection = "AzureWebJobsStorage")]
-            CloudBlockBlob input,
-            [Blob("thumb-sm/{name}.thumb.jpg", FileAccess.ReadWrite)]
-            CloudBlockBlob output_sm,
-            [Blob("thumb-md/{name}.thumb.jpg", FileAccess.ReadWrite)]
-            CloudBlockBlob output_md,
-            [Blob("thumb-lg/{name}.thumb.jpg", FileAccess.ReadWrite)]
-            CloudBlockBlob output_lg,
-            string name,
-            TraceWriter log) {
-            try {
-                if (IsVideo(name)) {
-                    VideoThumbnailer.ThumbVideo(input, output_sm, output_md, output_lg, name, log);
-                }
-            }
-            catch (Exception e) {
-                log.Error($"error while processing {name}", e);
-                throw;
-            }
-        }
-
+    public static partial class ThumbnailFunc {
         private static string[] availableSizes = {"sm", "md", "lg"};
         private static string defaultSize = "md";
         private static string storageBaseUrl;
         private static string storageName;
         private static string storageKey;
 
+        private static string pendingUri;
+
         static ThumbnailFunc() {
             var dict = Environment.GetEnvironmentVariable("AzureWebJobsStorage", EnvironmentVariableTarget.Process)
                               .Split(';')
                               .Select(s => Regex.Match(s, "(.+?)=(.+)").Groups)
                               .ToDictionary(g => g[1].ToString(), g => g[2].ToString());
-            storageBaseUrl = $"{dict["DefaultEndpointsProtocol"]}://{dict["AccountName"]}.blob.{dict["EndpointSuffix"]}";
+            var suffix = dict.ContainsKey("EndpointSuffix") ? dict["EndpointSuffix"] : "core.windows.net";
+
+            storageBaseUrl = $"{dict["DefaultEndpointsProtocol"]}://{dict["AccountName"]}.blob.{suffix}";
             storageName = dict["AccountName"];
             storageKey = dict["AccountKey"];
+
+            var pending = new CloudBlockBlob(
+                new Uri($"{storageBaseUrl}/static/pending.jpg"),
+                new StorageCredentials(storageName, storageKey));
+            pendingUri = pending.Uri.AbsoluteUri;
         }
 
         [FunctionName("RestThumb")]
         public static HttpResponseMessage RunRest(
             [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = "thumb")]
-            HttpRequestMessage req, TraceWriter log) {
+            HttpRequestMessage req, 
+            [Queue("pending-thumbs", Connection = "AzureWebJobsStorage")]
+            CloudQueue pendingQueue,
+            TraceWriter log) {
             string name = req.GetQueryNameValuePairs()
                              .FirstOrDefault(q => string.Compare(q.Key, "name", StringComparison.OrdinalIgnoreCase) == 0)
                              .Value;
@@ -160,6 +101,28 @@ namespace AzureThumb {
 
             /* Generate thumbnails */
 
+            pendingQueue.AddMessage(new CloudQueueMessage(name),options: new QueueRequestOptions());
+
+            return new HttpResponseMessage(HttpStatusCode.Redirect) {
+                Headers = {{"Location", pendingUri}},
+                Content = new StringContent($"thumbnail for {name} is generating, please try again later.")
+            };
+            return new HttpResponseMessage(HttpStatusCode.OK) {Content = new StringContent($"thumbnail for {name} is generating, please try again later.")};
+        }
+
+
+        [FunctionName("QueueThumb")]
+        public static async Task QueueThumb(
+            [QueueTrigger("pending-thumbs", Connection = "AzureWebJobsStorage")]
+            string pendingName,
+            TraceWriter log) {
+            var name = pendingName;
+
+            var input = new CloudBlockBlob(
+                new Uri($"{storageBaseUrl}/ero/{name}"),
+                new StorageCredentials(storageName, storageKey));
+
+
             var sm = new CloudBlockBlob(
                 new Uri($"{storageBaseUrl}/thumb-sm/" + name + ".thumb.jpg"),
                 new StorageCredentials(storageName, storageKey));
@@ -172,15 +135,17 @@ namespace AzureThumb {
                 new Uri($"{storageBaseUrl}/thumb-lg/" + name + ".thumb.jpg"),
                 new StorageCredentials(storageName, storageKey));
 
+            if (sm.Exists() && md.Exists() && lg.Exists()) {
+                return;
+            } 
 
+            bool isImage = IsImage(name), isVideo = IsVideo(name);
             if (isImage) {
-                ImageThumbnailer.ImageThumb(input, sm, md, lg, name, log);
+                await ImageThumbnailer.ImageThumb(input, sm, md, lg, name, log);
             }
             else if (isVideo) {
-                VideoThumbnailer.ThumbVideo(input, sm, md, lg, name, log);
+                await VideoThumbnailer.ThumbVideo(input, sm, md, lg, name, log);
             }
-
-            return new HttpResponseMessage(HttpStatusCode.OK) {Content = new StringContent($"thumbnail for {name} is generating, please try again later.")};
         }
     }
 }

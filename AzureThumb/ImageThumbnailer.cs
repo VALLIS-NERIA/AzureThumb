@@ -31,7 +31,7 @@ namespace AzureThumb {
             return SetMetadata(input, output, img.Width, img.Height, thumbSize.Width, thumbSize.Height);
         }
 
-        internal static async void ImageThumb(
+        internal static async Task ImageThumb(
             CloudBlockBlob input,
             CloudBlockBlob output_sm,
             CloudBlockBlob output_md,

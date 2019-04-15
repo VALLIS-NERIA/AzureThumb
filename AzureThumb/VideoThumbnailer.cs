@@ -107,7 +107,7 @@ namespace AzureThumb {
         }
 
 
-        internal static async void ThumbVideo(
+        internal static async Task ThumbVideo(
             CloudBlockBlob input,
             CloudBlockBlob output_sm,
             CloudBlockBlob output_md,
