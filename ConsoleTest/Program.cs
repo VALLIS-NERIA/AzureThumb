@@ -1,16 +1,24 @@
 ﻿using System.Diagnostics;
-using System.Drawing.Drawing2D;
+//using System.Drawing.Drawing2D;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.WindowsAzure.Storage;
-using Microsoft.WindowsAzure.Storage.Auth;
-using Microsoft.WindowsAzure.Storage.Blob;
-using Newtonsoft.Json;
+//using Microsoft.WindowsAzure.Storage;
+//using Microsoft.WindowsAzure.Storage.Auth;
+//using Microsoft.WindowsAzure.Storage.Blob;
+//using Newtonsoft.Json;
+using SixLabors.ImageSharp;
+using SixLabors.Fonts;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Primitives;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.Primitives;
+using SixLabors.Shapes;
+using SixLabors.ImageSharp.Processing.Processors.Text;
+using SixLabors.ImageSharp.Processing.Processors;
 
 namespace ConsoleTest {
     using System;
-    using System.Drawing;
-    using System.Drawing.Imaging;
     using System.IO;
     using System.Text.RegularExpressions;
     using GleamTech.VideoUltimate;
@@ -59,24 +67,25 @@ namespace ConsoleTest {
                 });
         }
 
-        static void  Main() {
-            var secret = JsonConvert.DeserializeAnonymousType(File.ReadAllText("..\\..\\secret.json"), new {baseUri = "", storageName = "", storageKey = ""});
-            CloudBlockBlob a = new CloudBlockBlob(new Uri(secret.baseUri + @"ero/test/kick.jpg"), new StorageCredentials(secret.storageName, secret.storageKey));
-            ;
-        }
+        //static void  Main() {
+        //    var secret = JsonConvert.DeserializeAnonymousType(File.ReadAllText("..\\..\\secret.json"), new {baseUri = "", storageName = "", storageKey = ""});
+        //    CloudBlockBlob a = new CloudBlockBlob(new Uri(secret.baseUri + @"ero/test/kick.jpg"), new StorageCredentials(secret.storageName, secret.storageKey));
+        //    ;
+        //}
 
-        public static void Main_() {
+        public static void Main() {
             var path = "test.mp4";
             var shortPath = "short";
             Stream s = new FileStream("test.mp4", FileMode.Open);
             var reader = new VideoFrameReader(s);
             var newSize = GetSize(reader);
+            var fonts = new FontCollection();
+            fonts.Install("Consolas YaHei.ttf");
+            var font =  fonts.CreateFont("Consolas YaHei", 12, FontStyle.Regular);
 
-            var font = new Font(new FontFamily("Microsoft YaHei UI"), 12, FontStyle.Bold);
+            var outputImg = new Image<Rgba32>(col * newSize.Width, row * newSize.Height + yOffset);
+            outputImg.Mutate(c => c.BackgroundColor(Rgba32.White));
 
-            var outputImg = new Bitmap(col * newSize.Width, row * newSize.Height + yOffset);
-            var og = Graphics.FromImage(outputImg);
-            og.Clear(Color.White);
             var length = reader.Duration.TotalSeconds;
             for (int i = 0; i < col; i++) {
                 for (int j = 0; j < row; j++) {
@@ -90,26 +99,26 @@ namespace ConsoleTest {
                         continue;
                     }
 
-                    using (var curImg = reader.GetFrame()) {
-                        og.DrawImage(curImg, x, y, newSize.Width, newSize.Height);
-                        var p = new GraphicsPath();
+                    using (var curImg = new Image<Rgba32>(200, 150)) {
+                        curImg.Mutate(c=>c.BackgroundColor(Rgba32.AliceBlue));
+                        curImg.Mutate(c => c.Resize(newSize));
+                        outputImg.Mutate(c => c.DrawImage(curImg, new Point(x, y), 1f));
+
                         var timeString = $"{time / 60:D2}:{time % 60:D2}";
-                        p.AddString(timeString, font.FontFamily, (int) font.Style, font.Size * 2, new Point(x, y), StringFormat.GenericDefault);
-                        og.FillPath(Brushes.White, p);
-                        og.DrawPath(new Pen(Color.Black, 2f), p);
+                        outputImg.Mutate(c => c.DrawText(timeString, font, Brushes.Solid(Rgba32.White), Pens.Solid(Rgba32.HotPink, 1), new PointF(x+10, y+10)));
                     }
                 }
             }
 
-            og.DrawString(
-                $"{shortPath}\n" +
-                $"{(int) reader.Duration.TotalMinutes:D2}:{reader.Duration.Seconds} - {reader.BitRate}kbps, {reader.CodecDescription}\n",
-                font,
-                Brushes.Black,
-                new RectangleF(0, 0, col * newSize.Width, yOffset));
-            outputImg.Save("out.jpg", ImageFormat.Jpeg);
+            outputImg.Mutate(c => c.DrawText($"{shortPath}\n" +
+                                             $"{(int) reader.Duration.TotalMinutes:D2}:{reader.Duration.Seconds} - {reader.BitRate}kbps, {reader.CodecDescription}\n",
+                                             font,
+                                             Brushes.Solid(Rgba32.Black),
+                                             Pens.Solid(Rgba32.HotPink, 1),
+                                             new PointF(10, 10)));
+
+            outputImg.Save("out.jpg", new JpegEncoder());
             outputImg.Dispose();
-            og.Dispose();
         }
     }
 }
